@@ -42,10 +42,12 @@ class AudioManager(private val application: Application) {
 
     fun setIncomingRingtone(uri: Uri) {
         incomingRingtoneUri = uri
+        log.d(tag = TAG) { "Incoming ringtone URI set: $uri" }
     }
 
     fun setOutgoingRingtone(uri: Uri) {
         outgoingRingtoneUri = uri
+        log.d(tag = TAG) { "Outgoing ringtone URI set: $uri" }
     }
 
     fun playRingtone() {

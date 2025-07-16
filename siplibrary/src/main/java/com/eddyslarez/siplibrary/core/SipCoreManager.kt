@@ -18,6 +18,7 @@ import com.eddyslarez.siplibrary.platform.PlatformInfo
 import com.eddyslarez.siplibrary.platform.PlatformRegistration
 import com.eddyslarez.siplibrary.platform.WindowManager
 import com.eddyslarez.siplibrary.utils.*
+import com.eddyslarez.siplibrary.utils.MultiCallManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -827,47 +828,81 @@ class SipCoreManager private constructor(
         }
     }
 
-    fun endCall() {
+    fun endCall(callId: String? = null) {
         val accountInfo = currentAccountInfo ?: return
-        val callData = accountInfo.currentCallData ?: return
+        
+        val targetCallData = if (callId != null) {
+            MultiCallManager.getCall(callId)
+        } else {
+            accountInfo.currentCallData
+        } ?: return
 
-        if (!CallStateManager.getCurrentState().isActive()) {
+        val callState = if (callId != null) {
+            MultiCallManager.getCallState(callId)
+        } else {
+            CallStateManager.getCurrentState()
+        }
+        
+        if (callState?.isActive() != true) {
             return
         }
 
         val endTime = Clock.System.now().toEpochMilliseconds()
-        val currentState = CallStateManager.getCurrentState().state
+        val currentState = callState.state
 
         when (currentState) {
             CallState.CONNECTED, CallState.STREAMS_RUNNING, CallState.PAUSED -> {
-                messageHandler.sendBye(accountInfo, callData)
-                callHistoryManager.addCallLog(callData, CallTypes.SUCCESS, endTime)
+                messageHandler.sendBye(accountInfo, targetCallData)
+                callHistoryManager.addCallLog(targetCallData, CallTypes.SUCCESS, endTime)
             }
 
             CallState.OUTGOING_INIT, CallState.OUTGOING_PROGRESS, CallState.OUTGOING_RINGING -> {
-                messageHandler.sendCancel(accountInfo, callData)
-                callHistoryManager.addCallLog(callData, CallTypes.ABORTED, endTime)
+                messageHandler.sendCancel(accountInfo, targetCallData)
+                callHistoryManager.addCallLog(targetCallData, CallTypes.ABORTED, endTime)
+                
+                // Detener outgoing ringtone
+                audioManager.stopOutgoingRingtone()
             }
 
             else -> {}
         }
 
         // Finalizar con nuevos estados
-        CallStateManager.startEnding(callData.callId)
+        CallStateManager.startEnding(targetCallData.callId)
         notifyCallStateChanged(CallState.ENDED)
 
-        webRtcManager.dispose()
+        // Solo dispose WebRTC si no hay más llamadas activas
+        if (MultiCallManager.getAllCalls().size <= 1) {
+            webRtcManager.dispose()
+        }
+        
         clearDtmfQueue()
-        accountInfo.resetCallState()
+        
+        // Solo resetear si es la llamada actual
+        if (accountInfo.currentCallData?.callId == targetCallData.callId) {
+            accountInfo.resetCallState()
+        }
+        
         handleCallTermination()
     }
 
-    fun acceptCall() {
+    fun acceptCall(callId: String? = null) {
         val accountInfo = currentAccountInfo ?: return
-        val callData = accountInfo.currentCallData ?: return
+        
+        val targetCallData = if (callId != null) {
+            MultiCallManager.getCall(callId)
+        } else {
+            accountInfo.currentCallData
+        } ?: return
 
-        if (callData.direction != CallDirections.INCOMING ||
-            CallStateManager.getCurrentState().state != CallState.INCOMING_RECEIVED
+        val callState = if (callId != null) {
+            MultiCallManager.getCallState(callId)
+        } else {
+            CallStateManager.getCurrentState()
+        }
+        
+        if (targetCallData.direction != CallDirections.INCOMING ||
+            callState?.state != CallState.INCOMING_RECEIVED
         ) {
             return
         }
@@ -882,10 +917,10 @@ class SipCoreManager private constructor(
                 webRtcManager.prepareAudioForIncomingCall()
                 delay(1000)
 
-                val sdp = webRtcManager.createAnswer(accountInfo, callData.remoteSdp ?: "")
-                callData.localSdp = sdp
+                val sdp = webRtcManager.createAnswer(accountInfo, targetCallData.remoteSdp ?: "")
+                targetCallData.localSdp = sdp
 
-                messageHandler.sendInviteOkResponse(accountInfo, callData)
+                messageHandler.sendInviteOkResponse(accountInfo, targetCallData)
                 delay(500)
 
                 webRtcManager.setAudioEnabled(true)
@@ -898,39 +933,50 @@ class SipCoreManager private constructor(
 
                 // Error al aceptar llamada
                 CallStateManager.callError(
-                    callData.callId,
+                    targetCallData.callId,
                     errorReason = CallErrorReason.NETWORK_ERROR
                 )
 
-                rejectCall()
+                rejectCall(callId)
             }
         }
     }
 
-    fun declineCall() {
+    fun declineCall(callId: String? = null) {
         val accountInfo = currentAccountInfo ?: return
-        val callData = accountInfo.currentCallData ?: return
+        
+        val targetCallData = if (callId != null) {
+            MultiCallManager.getCall(callId)
+        } else {
+            accountInfo.currentCallData
+        } ?: return
 
-        if (callData.direction != CallDirections.INCOMING ||
-            CallStateManager.getCurrentState().state != CallState.INCOMING_RECEIVED
+        val callState = if (callId != null) {
+            MultiCallManager.getCallState(callId)
+        } else {
+            CallStateManager.getCurrentState()
+        }
+        
+        if (targetCallData.direction != CallDirections.INCOMING ||
+            callState?.state != CallState.INCOMING_RECEIVED
         ) {
             return
         }
 
-        if (callData.toTag?.isEmpty() == true) {
-            callData.toTag = generateId()
+        if (targetCallData.toTag?.isEmpty() == true) {
+            targetCallData.toTag = generateId()
         }
 
-        messageHandler.sendDeclineResponse(accountInfo, callData)
+        messageHandler.sendDeclineResponse(accountInfo, targetCallData)
 
         val endTime = Clock.System.now().toEpochMilliseconds()
-        callHistoryManager.addCallLog(callData, CallTypes.DECLINED, endTime)
+        callHistoryManager.addCallLog(targetCallData, CallTypes.DECLINED, endTime)
 
         // Estado de rechazo
         notifyCallStateChanged(CallState.ERROR)
     }
 
-    fun rejectCall() = declineCall()
+    fun rejectCall(callId: String? = null) = declineCall(callId)
 
     fun mute() {
         webRtcManager.setMuted(!webRtcManager.isMuted())
@@ -1028,36 +1074,46 @@ class SipCoreManager private constructor(
         }
     }
 
-    fun holdCall() {
+    fun holdCall(callId: String? = null) {
         val accountInfo = currentAccountInfo ?: return
-        val callData = accountInfo.currentCallData ?: return
+        
+        val targetCallData = if (callId != null) {
+            MultiCallManager.getCall(callId)
+        } else {
+            accountInfo.currentCallData
+        } ?: return
 
         CoroutineScope(Dispatchers.IO).launch {
             // Iniciar proceso de hold
-            CallStateManager.startHold(callData.callId)
+            CallStateManager.startHold(targetCallData.callId)
 
             callHoldManager.holdCall()?.let { holdSdp ->
-                callData.localSdp = holdSdp
-                callData.isOnHold = true
-                messageHandler.sendReInvite(accountInfo, callData, holdSdp)
+                targetCallData.localSdp = holdSdp
+                targetCallData.isOnHold = true
+                messageHandler.sendReInvite(accountInfo, targetCallData, holdSdp)
 
                 notifyCallStateChanged(CallState.PAUSING)
             }
         }
     }
 
-    fun resumeCall() {
+    fun resumeCall(callId: String? = null) {
         val accountInfo = currentAccountInfo ?: return
-        val callData = accountInfo.currentCallData ?: return
+        
+        val targetCallData = if (callId != null) {
+            MultiCallManager.getCall(callId)
+        } else {
+            accountInfo.currentCallData
+        } ?: return
 
         CoroutineScope(Dispatchers.IO).launch {
             // Iniciar proceso de resume
-            CallStateManager.startResume(callData.callId)
+            CallStateManager.startResume(targetCallData.callId)
 
             callHoldManager.resumeCall()?.let { resumeSdp ->
-                callData.localSdp = resumeSdp
-                callData.isOnHold = false
-                messageHandler.sendReInvite(accountInfo, callData, resumeSdp)
+                targetCallData.localSdp = resumeSdp
+                targetCallData.isOnHold = false
+                messageHandler.sendReInvite(accountInfo, targetCallData, resumeSdp)
 
                 notifyCallStateChanged(CallState.RESUMING)
             }
@@ -1079,6 +1135,11 @@ class SipCoreManager private constructor(
     fun currentCall(): Boolean = CallStateManager.getCurrentState().isActive()
     fun currentCallConnected(): Boolean = CallStateManager.getCurrentState().isConnected()
     fun getCurrentCallState(): CallStateInfo = CallStateManager.getCurrentState()
+    
+    /**
+     * Obtiene todas las llamadas activas
+     */
+    fun getAllActiveCalls(): List<CallData> = MultiCallManager.getAllCalls()
 
     fun isSipCoreManagerHealthy(): Boolean {
         return try {
@@ -1105,6 +1166,10 @@ class SipCoreManager private constructor(
             // Información de estados
             appendLine("\n--- Call State Info ---")
             appendLine(CallStateManager.getDiagnosticInfo())
+            
+            // Información de múltiples llamadas
+            appendLine("\n--- Multi Call Info ---")
+            appendLine(MultiCallManager.getDiagnosticInfo())
         }
     }
 
@@ -1133,6 +1198,12 @@ class SipCoreManager private constructor(
     }
 
     fun dispose() {
+        // Detener todos los ringtones
+        audioManager.stopAllRingtones()
+        
+        // Limpiar llamadas
+        MultiCallManager.clearAllCalls()
+        
         webRtcManager.dispose()
         activeAccounts.clear()
         _registrationStates.value = emptyMap()

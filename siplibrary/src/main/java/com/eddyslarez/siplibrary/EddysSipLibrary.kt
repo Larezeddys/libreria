@@ -8,11 +8,13 @@ import com.eddyslarez.siplibrary.data.services.audio.AudioDevice
 import com.eddyslarez.siplibrary.utils.CallStateManager
 import com.eddyslarez.siplibrary.utils.RegistrationStateManager
 import com.eddyslarez.siplibrary.utils.log
+import com.eddyslarez.siplibrary.utils.MultiCallManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import android.net.Uri
 
 /**
  * EddysSipLibrary - Biblioteca SIP/VoIP para Android (Versión Optimizada)
@@ -49,7 +51,9 @@ class EddysSipLibrary private constructor() {
         val userAgent: String = "",
         val enableLogs: Boolean = true,
         val enableAutoReconnect: Boolean = true,
-        val pingIntervalMs: Long = 30000L
+        val pingIntervalMs: Long = 30000L,
+        val incomingRingtoneUri: Uri? = null,
+        val outgoingRingtoneUri: Uri? = null
     )
 
     /**
@@ -115,7 +119,8 @@ class EddysSipLibrary private constructor() {
         val isMuted: Boolean = false,
         val localAccount: String,
         val codec: String? = null,
-        val state: CallState? = null
+        val state: CallState? = null,
+        val isCurrentCall: Boolean = false
     )
 
     /**
@@ -171,6 +176,14 @@ class EddysSipLibrary private constructor() {
             // Configurar listeners internos
             setupInternalListeners()
 
+            // Configurar ringtones personalizados si se proporcionan
+            config.incomingRingtoneUri?.let { uri ->
+                sipCoreManager?.audioManager?.setIncomingRingtone(uri)
+            }
+            config.outgoingRingtoneUri?.let { uri ->
+                sipCoreManager?.audioManager?.setOutgoingRingtone(uri)
+            }
+
             isInitialized = true
             log.d(tag = TAG) { "EddysSipLibrary initialized successfully" }
 
@@ -221,23 +234,30 @@ class EddysSipLibrary private constructor() {
             // Observar estados usando el nuevo CallStateManager
             CoroutineScope(Dispatchers.Main).launch {
                 CallStateManager.callStateFlow.collect { stateInfo ->
-                    notifyCallStateChanged(stateInfo)
+                    // Obtener información completa de la llamada
+                    val callInfo = getCallInfoForState(stateInfo)
+                    val enhancedStateInfo = stateInfo.copy(
+                        // Agregar información adicional si es necesario
+                    )
+                    
+                    notifyCallStateChanged(enhancedStateInfo)
 
                     // Mapear a eventos específicos para compatibilidad
-                    val callInfo = getCurrentCallInfo()
+                    callInfo?.let { info ->
                     when (stateInfo.state) {
-                        CallState.CONNECTED -> callInfo?.let { notifyCallConnected(it) }
-                        CallState.OUTGOING_RINGING -> callInfo?.let { notifyCallRinging(it) }
-                        CallState.OUTGOING_INIT -> callInfo?.let { notifyCallInitiated(it) }
+                        CallState.CONNECTED -> notifyCallConnected(info)
+                        CallState.OUTGOING_RINGING -> notifyCallRinging(info)
+                        CallState.OUTGOING_INIT -> notifyCallInitiated(info)
                         CallState.INCOMING_RECEIVED -> handleIncomingCall()
-                        CallState.ENDED -> callInfo?.let { notifyCallEnded(it, CallEndReason.NORMAL_HANGUP) }
-                        CallState.PAUSED -> callInfo?.let { notifyCallHeld(it) }
-                        CallState.STREAMS_RUNNING -> callInfo?.let { notifyCallResumed(it) }
+                        CallState.ENDED -> notifyCallEnded(info, CallEndReason.NORMAL_HANGUP)
+                        CallState.PAUSED -> notifyCallHeld(info)
+                        CallState.STREAMS_RUNNING -> notifyCallResumed(info)
                         CallState.ERROR -> {
                             val reason = mapErrorReasonToCallEndReason(stateInfo.errorReason)
-                            callInfo?.let { notifyCallEnded(it, reason) }
+                            notifyCallEnded(info, reason)
                         }
                         else -> {}
+                    }
                     }
                 }
             }
@@ -488,12 +508,61 @@ class EddysSipLibrary private constructor() {
     // === MÉTODOS AUXILIARES ===
 
     /**
-     * Método getCurrentCallInfo() con nuevos estados
+     * Obtiene información de llamada para un estado específico
+     */
+    private fun getCallInfoForState(stateInfo: CallStateInfo): CallInfo? {
+        val manager = sipCoreManager ?: return null
+        val calls = MultiCallManager.getAllCalls()
+        
+        // Buscar la llamada específica por callId
+        val callData = calls.find { it.callId == stateInfo.callId }
+            ?: manager.currentAccountInfo?.currentCallData
+            ?: return null
+
+        val account = manager.currentAccountInfo ?: return null
+        val currentCall1 = calls.size == 1 && 
+            stateInfo.state != CallState.ENDED && 
+            stateInfo.state != CallState.ERROR && 
+            stateInfo.state != CallState.ENDING && 
+            stateInfo.state != CallState.IDLE
+        
+        return try {
+            CallInfo(
+                callId = callData.callId,
+                phoneNumber = if (callData.direction == CallDirections.INCOMING) callData.from else callData.to,
+                displayName = callData.remoteDisplayName.takeIf { it.isNotEmpty() },
+                direction = if (callData.direction == CallDirections.INCOMING) CallDirection.INCOMING else CallDirection.OUTGOING,
+                startTime = callData.startTime,
+                duration = if (callData.startTime > 0) System.currentTimeMillis() - callData.startTime else 0,
+                isOnHold = callData.isOnHold ?: false,
+                isMuted = manager.webRtcManager.isMuted(),
+                localAccount = account.username,
+                codec = null,
+                state = stateInfo.state,
+                isCurrentCall = currentCall1
+            )
+        } catch (e: Exception) {
+            log.e(tag = TAG) { "Error creating CallInfo: ${e.message}" }
+            null
+        }
+    }
+
+    /**
+     * Método getCurrentCallInfo() actualizado
      */
     private fun getCurrentCallInfo(): CallInfo? {
         val manager = sipCoreManager ?: return null
         val account = manager.currentAccountInfo ?: return null
-        val callData = account.currentCallData ?: return null
+        val calls = MultiCallManager.getAllCalls()
+        val callData = calls.firstOrNull() ?: account.currentCallData ?: return null
+        
+        val currentCall1 = calls.size == 1 && 
+            CallStateManager.getCurrentState().let { state ->
+                state.state != CallState.ENDED && 
+                state.state != CallState.ERROR && 
+                state.state != CallState.ENDING && 
+                state.state != CallState.IDLE
+            }
 
         return try {
             // Obtener estado actual
@@ -510,7 +579,8 @@ class EddysSipLibrary private constructor() {
                 isMuted = manager.webRtcManager.isMuted(),
                 localAccount = account.username,
                 codec = null,
-                state = currentState.state
+                state = currentState.state,
+                isCurrentCall = currentCall1
             )
         } catch (e: Exception) {
             log.e(tag = TAG) { "Error creating CallInfo: ${e.message}" }
@@ -667,6 +737,9 @@ class EddysSipLibrary private constructor() {
         return sipCoreManager?.getAudioDevices() ?: Pair(emptyList(), emptyList())
     }
 
+    /**
+     * Realiza una llamada
+     */
     fun makeCall(
         phoneNumber: String,
         username: String? = null,
@@ -686,34 +759,167 @@ class EddysSipLibrary private constructor() {
         sipCoreManager?.makeCall(phoneNumber, finalUsername, finalDomain)
     }
 
-    fun acceptCall() {
+    /**
+     * Acepta una llamada (con soporte para múltiples llamadas)
+     */
+    fun acceptCall(callId: String? = null) {
         checkInitialized()
-        log.d(tag = TAG) { "Accepting call" }
-        sipCoreManager?.acceptCall()
+        
+        val calls = MultiCallManager.getAllCalls()
+        val targetCallId = if (callId == null && calls.size == 1) {
+            // Llamada única, usar sin callId
+            log.d(tag = TAG) { "Accepting single call" }
+            sipCoreManager?.acceptCall()
+            return
+        } else {
+            callId ?: calls.firstOrNull()?.callId
+        }
+        
+        if (targetCallId != null) {
+            log.d(tag = TAG) { "Accepting call: $targetCallId" }
+            sipCoreManager?.acceptCall(targetCallId)
+        } else {
+            log.w(tag = TAG) { "No call to accept" }
+        }
     }
 
-    fun declineCall() {
+    /**
+     * Rechaza una llamada (con soporte para múltiples llamadas)
+     */
+    fun declineCall(callId: String? = null) {
         checkInitialized()
-        log.d(tag = TAG) { "Declining call" }
-        sipCoreManager?.declineCall()
+        
+        val calls = MultiCallManager.getAllCalls()
+        val targetCallId = if (callId == null && calls.size == 1) {
+            // Llamada única, usar sin callId
+            log.d(tag = TAG) { "Declining single call" }
+            sipCoreManager?.declineCall()
+            return
+        } else {
+            callId ?: calls.firstOrNull()?.callId
+        }
+        
+        if (targetCallId != null) {
+            log.d(tag = TAG) { "Declining call: $targetCallId" }
+            sipCoreManager?.declineCall(targetCallId)
+        } else {
+            log.w(tag = TAG) { "No call to decline" }
+        }
     }
 
-    fun endCall() {
+    /**
+     * Termina una llamada (con soporte para múltiples llamadas)
+     */
+    fun endCall(callId: String? = null) {
         checkInitialized()
-        log.d(tag = TAG) { "Ending call" }
-        sipCoreManager?.endCall()
+        
+        val calls = MultiCallManager.getAllCalls()
+        val targetCallId = if (callId == null && calls.size == 1) {
+            // Llamada única, usar sin callId
+            log.d(tag = TAG) { "Ending single call" }
+            sipCoreManager?.endCall()
+            return
+        } else {
+            callId ?: calls.firstOrNull()?.callId
+        }
+        
+        if (targetCallId != null) {
+            log.d(tag = TAG) { "Ending call: $targetCallId" }
+            sipCoreManager?.endCall(targetCallId)
+        } else {
+            log.w(tag = TAG) { "No call to end" }
+        }
     }
 
-    fun holdCall() {
+    /**
+     * Pone una llamada en espera (con soporte para múltiples llamadas)
+     */
+    fun holdCall(callId: String? = null) {
         checkInitialized()
-        log.d(tag = TAG) { "Holding call" }
-        sipCoreManager?.holdCall()
+        
+        val calls = MultiCallManager.getAllCalls()
+        val targetCallId = if (callId == null && calls.size == 1) {
+            // Llamada única, usar sin callId
+            log.d(tag = TAG) { "Holding single call" }
+            sipCoreManager?.holdCall()
+            return
+        } else {
+            callId ?: calls.firstOrNull()?.callId
+        }
+        
+        if (targetCallId != null) {
+            log.d(tag = TAG) { "Holding call: $targetCallId" }
+            sipCoreManager?.holdCall(targetCallId)
+        } else {
+            log.w(tag = TAG) { "No call to hold" }
+        }
     }
 
-    fun resumeCall() {
+    /**
+     * Reanuda una llamada (con soporte para múltiples llamadas)
+     */
+    fun resumeCall(callId: String? = null) {
         checkInitialized()
-        log.d(tag = TAG) { "Resuming call" }
-        sipCoreManager?.resumeCall()
+        
+        val calls = MultiCallManager.getAllCalls()
+        val targetCallId = if (callId == null && calls.size == 1) {
+            // Llamada única, usar sin callId
+            log.d(tag = TAG) { "Resuming single call" }
+            sipCoreManager?.resumeCall()
+            return
+        } else {
+            callId ?: calls.firstOrNull()?.callId
+        }
+        
+        if (targetCallId != null) {
+            log.d(tag = TAG) { "Resuming call: $targetCallId" }
+            sipCoreManager?.resumeCall(targetCallId)
+        } else {
+            log.w(tag = TAG) { "No call to resume" }
+        }
+    }
+    
+    /**
+     * Alias para resumeCall para compatibilidad
+     */
+    fun unholdCall(callId: String? = null) = resumeCall(callId)
+
+    /**
+     * Obtiene todas las llamadas activas
+     */
+    fun getAllCalls(): List<CallInfo> {
+        checkInitialized()
+        return MultiCallManager.getAllCalls().mapNotNull { callData ->
+            try {
+                val account = sipCoreManager?.currentAccountInfo ?: return@mapNotNull null
+                val calls = MultiCallManager.getAllCalls()
+                val currentCall1 = calls.size == 1 && 
+                    CallStateManager.getCurrentState().let { state ->
+                        state.state != CallState.ENDED && 
+                        state.state != CallState.ERROR && 
+                        state.state != CallState.ENDING && 
+                        state.state != CallState.IDLE
+                    }
+                
+                CallInfo(
+                    callId = callData.callId,
+                    phoneNumber = if (callData.direction == CallDirections.INCOMING) callData.from else callData.to,
+                    displayName = callData.remoteDisplayName.takeIf { it.isNotEmpty() },
+                    direction = if (callData.direction == CallDirections.INCOMING) CallDirection.INCOMING else CallDirection.OUTGOING,
+                    startTime = callData.startTime,
+                    duration = if (callData.startTime > 0) System.currentTimeMillis() - callData.startTime else 0,
+                    isOnHold = callData.isOnHold ?: false,
+                    isMuted = sipCoreManager?.webRtcManager?.isMuted() ?: false,
+                    localAccount = account.username,
+                    codec = null,
+                    state = CallStateManager.getStateForCall(callData.callId)?.state,
+                    isCurrentCall = currentCall1 && callData.callId == CallStateManager.getCurrentCallId()
+                )
+            } catch (e: Exception) {
+                log.e(tag = TAG) { "Error creating CallInfo for ${callData.callId}: ${e.message}" }
+                null
+            }
+        }
     }
 
     fun toggleMute() {
@@ -736,7 +942,7 @@ class EddysSipLibrary private constructor() {
 
     fun hasActiveCall(): Boolean {
         checkInitialized()
-        return sipCoreManager?.currentCall() ?: false
+        return MultiCallManager.hasActiveCalls()
     }
 
     // === MÉTODOS ADICIONALES ===

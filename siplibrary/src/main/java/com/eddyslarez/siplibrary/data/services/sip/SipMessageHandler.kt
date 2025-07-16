@@ -296,9 +296,10 @@ class SipMessageHandler(private val sipCoreManager: SipCoreManager) {
                     sipCoreManager.callHistoryManager.addCallLog(currentCallData, callType, endTime)
                 }
                 "CANCEL" -> {
-                    if (!sipCoreManager.getCurrentCallState().state.let {
-                            it == CallState.INCOMING_RECEIVED || it == CallState.OUTGOING_RINGING
-                        }) {
+                    // Obtener estado específico de la llamada
+                    val callState = MultiCallManager.getCallState(callId)
+                    if (callState?.state != CallState.INCOMING_RECEIVED && 
+                        callState?.state != CallState.OUTGOING_RINGING) {
                         log.d(tag = TAG) { "CANCEL received but call not in INCOMING/RINGING state, ignoring" }
                         return
                     }
@@ -326,8 +327,16 @@ class SipMessageHandler(private val sipCoreManager: SipCoreManager) {
             CallStateManager.callEnded(callId)
             sipCoreManager.notifyCallStateChanged(CallState.ENDED)
 
-            sipCoreManager.webRtcManager.dispose()
-            accountInfo.currentCallData = null
+            // Solo dispose WebRTC si no hay más llamadas activas
+            if (MultiCallManager.getAllCalls().size <= 1) {
+                sipCoreManager.webRtcManager.dispose()
+            }
+            
+            // Solo limpiar si es la llamada actual
+            if (accountInfo.currentCallData?.callId == callId) {
+                accountInfo.currentCallData = null
+            }
+            
             terminateCall()
 
         } catch (e: Exception) {
@@ -925,6 +934,9 @@ class SipMessageHandler(private val sipCoreManager: SipCoreManager) {
             "Decline",
             CallErrorReason.REJECTED
         )
+        
+        // Detener ringtones
+        sipCoreManager.audioManager.stopAllRingtones()
 
         terminateCall()
     }
@@ -988,6 +1000,9 @@ class SipMessageHandler(private val sipCoreManager: SipCoreManager) {
     fun sendCancel(accountInfo: AccountInfo, callData: CallData) {
         // Iniciar finalización por cancelación
         CallStateManager.startEnding(callData.callId)
+        
+        // Detener outgoing ringtone inmediatamente
+        sipCoreManager.audioManager.stopOutgoingRingtone()
 
         sendSipMessage(
             messageBuilder = {

@@ -61,7 +61,10 @@ object CallStateManager {
             log.w(tag = "CallStateManager") {
                 "Invalid state transition: ${currentStateInfo.state} -> $newState for $direction call"
             }
-            return false
+            // Permitir ciertas transiciones críticas aunque no sean válidas
+            if (newState != CallState.ERROR && newState != CallState.ENDED && newState != CallState.IDLE) {
+                return false
+            }
         }
 
         // Crear nueva información de estado
@@ -78,6 +81,9 @@ object CallStateManager {
 
         // Actualizar estado actual
         _callStateFlow.value = newStateInfo
+        
+        // Actualizar en MultiCallManager también
+        MultiCallManager.updateCallState(callId, newState, errorReason)
 
         // Añadir al historial
         val currentHistory = _callHistoryFlow.value.toMutableList()
@@ -94,8 +100,11 @@ object CallStateManager {
             currentCallId = callId
             currentDirection = direction
         } else if (newState == CallState.ENDED || newState == CallState.IDLE) {
-            currentCallId = ""
-            currentCallerNumber = ""
+            // Solo limpiar si es la llamada actual
+            if (currentCallId == callId) {
+                currentCallId = ""
+                currentCallerNumber = ""
+            }
         }
 
         log.d(tag = "CallStateManager") {
@@ -109,6 +118,17 @@ object CallStateManager {
 
     fun startOutgoingCall(callId: String, phoneNumber: String) {
         currentCallerNumber = phoneNumber
+        
+        // Crear CallData y añadir al MultiCallManager
+        val callData = CallData(
+            callId = callId,
+            to = phoneNumber,
+            from = "", // Se llenará desde el SipCoreManager
+            direction = CallDirections.OUTGOING,
+            startTime = Clock.System.now().toEpochMilliseconds()
+        )
+        MultiCallManager.addCall(callData)
+        
         updateCallState(
             newState = CallState.OUTGOING_INIT,
             callId = callId,
@@ -138,6 +158,17 @@ object CallStateManager {
 
     fun incomingCallReceived(callId: String, callerNumber: String) {
         currentCallerNumber = callerNumber
+        
+        // Crear CallData y añadir al MultiCallManager
+        val callData = CallData(
+            callId = callId,
+            to = "", // Se llenará desde el SipCoreManager
+            from = callerNumber,
+            direction = CallDirections.INCOMING,
+            startTime = Clock.System.now().toEpochMilliseconds()
+        )
+        MultiCallManager.addCall(callData)
+        
         updateCallState(
             newState = CallState.INCOMING_RECEIVED,
             callId = callId,
@@ -202,6 +233,12 @@ object CallStateManager {
             sipCode = sipCode,
             sipReason = sipReason
         )
+        
+        // Asegurar que la llamada se remueva del MultiCallManager
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            kotlinx.coroutines.delay(500)
+            MultiCallManager.removeCall(callId)
+        }
     }
 
     // === MÉTODOS PARA ERRORES ===
@@ -225,11 +262,18 @@ object CallStateManager {
             sipReason = sipReason,
             errorReason = mappedError
         )
+        
+        // Remover llamada con error después de un delay
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            kotlinx.coroutines.delay(2000)
+            MultiCallManager.removeCall(callId)
+        }
     }
 
     // === MÉTODOS PARA RESETEO ===
 
     fun resetToIdle() {
+        MultiCallManager.clearAllCalls()
         updateCallState(
             newState = CallState.IDLE,
             callId = "",
@@ -250,6 +294,13 @@ object CallStateManager {
     fun getStateHistory(): List<CallStateInfo> = _callHistoryFlow.value
     fun clearHistory() {
         _callHistoryFlow.value = emptyList()
+    }
+    
+    /**
+     * Obtiene el estado de una llamada específica
+     */
+    fun getStateForCall(callId: String): CallStateInfo? {
+        return MultiCallManager.getCallState(callId)
     }
 
     // === MÉTODOS AUXILIARES PARA COMPATIBILIDAD ===

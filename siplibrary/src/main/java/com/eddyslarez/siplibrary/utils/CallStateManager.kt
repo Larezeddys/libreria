@@ -1,10 +1,14 @@
 package com.eddyslarez.siplibrary.utils
 
 import com.eddyslarez.siplibrary.data.models.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+
 /**
  * Gestor optimizado de estados de llamada
  * Solo maneja los nuevos estados definidos, sin compatibilidad legacy
@@ -12,6 +16,8 @@ import kotlinx.datetime.Clock
  * @author Eddys Larez
  */
 object CallStateManager {
+
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     private val _callStateFlow = MutableStateFlow(
         CallStateInfo(
@@ -45,7 +51,8 @@ object CallStateManager {
         // Prevenir duplicados del mismo estado
         if (currentStateInfo.state == newState &&
             currentStateInfo.callId == callId &&
-            currentStateInfo.errorReason == errorReason) {
+            currentStateInfo.errorReason == errorReason
+        ) {
             log.d(tag = "CallStateManager") {
                 "Duplicate state transition prevented: $newState for call $callId"
             }
@@ -57,7 +64,8 @@ object CallStateManager {
                 currentStateInfo.state,
                 newState,
                 direction
-            )) {
+            )
+        ) {
             log.w(tag = "CallStateManager") {
                 "Invalid state transition: ${currentStateInfo.state} -> $newState for $direction call"
             }
@@ -81,7 +89,7 @@ object CallStateManager {
 
         // Actualizar estado actual
         _callStateFlow.value = newStateInfo
-        
+
         // Actualizar en MultiCallManager también
         MultiCallManager.updateCallState(callId, newState, errorReason)
 
@@ -118,7 +126,7 @@ object CallStateManager {
 
     fun startOutgoingCall(callId: String, phoneNumber: String) {
         currentCallerNumber = phoneNumber
-        
+
         // Crear CallData y añadir al MultiCallManager
         val callData = CallData(
             callId = callId,
@@ -128,7 +136,7 @@ object CallStateManager {
             startTime = Clock.System.now().toEpochMilliseconds()
         )
         MultiCallManager.addCall(callData)
-        
+
         updateCallState(
             newState = CallState.OUTGOING_INIT,
             callId = callId,
@@ -158,7 +166,7 @@ object CallStateManager {
 
     fun incomingCallReceived(callId: String, callerNumber: String) {
         currentCallerNumber = callerNumber
-        
+
         // Crear CallData y añadir al MultiCallManager
         val callData = CallData(
             callId = callId,
@@ -168,7 +176,7 @@ object CallStateManager {
             startTime = Clock.System.now().toEpochMilliseconds()
         )
         MultiCallManager.addCall(callData)
-        
+
         updateCallState(
             newState = CallState.INCOMING_RECEIVED,
             callId = callId,
@@ -233,9 +241,9 @@ object CallStateManager {
             sipCode = sipCode,
             sipReason = sipReason
         )
-        
+
         // Asegurar que la llamada se remueva del MultiCallManager
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
             kotlinx.coroutines.delay(500)
             MultiCallManager.removeCall(callId)
         }
@@ -262,9 +270,9 @@ object CallStateManager {
             sipReason = sipReason,
             errorReason = mappedError
         )
-        
+
         // Remover llamada con error después de un delay
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        scope.launch {
             kotlinx.coroutines.delay(2000)
             MultiCallManager.removeCall(callId)
         }
@@ -295,7 +303,7 @@ object CallStateManager {
     fun clearHistory() {
         _callHistoryFlow.value = emptyList()
     }
-    
+
     /**
      * Obtiene el estado de una llamada específica
      */

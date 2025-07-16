@@ -1,10 +1,10 @@
 package com.eddyslarez.siplibrary.data.services.sip
 
-import com.eddyslarez.siplibrary.EddysSipLibrary
 import com.eddyslarez.siplibrary.core.SipCoreManager
 import com.eddyslarez.siplibrary.data.models.*
 import com.eddyslarez.siplibrary.data.services.audio.SdpType
 import com.eddyslarez.siplibrary.utils.CallStateManager
+import com.eddyslarez.siplibrary.utils.MultiCallManager
 import com.eddyslarez.siplibrary.utils.generateId
 import com.eddyslarez.siplibrary.utils.log
 import kotlinx.coroutines.CoroutineScope

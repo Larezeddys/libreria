@@ -88,7 +88,7 @@ class MyApplication : Application() {
             pingIntervalMs = 30000L
         )
         
-        // Inicializar con WebRTC Manager mejorado
+        // Inicializar la librería (AndroidWebRtcManager ya incluye interceptación)
         EddysSipLibrary.getInstance().initialize(this, config)
     }
 }
@@ -101,22 +101,17 @@ class MyApplication : Application() {
 ```kotlin
 class CallActivity : ComponentActivity() {
     private lateinit var sipLibrary: EddysSipLibrary
-    private lateinit var enhancedWebRtcManager: EnhancedWebRtcManager
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         sipLibrary = EddysSipLibrary.getInstance()
-        
-        // Obtener el manager mejorado (necesitarás modificar la librería para esto)
-        enhancedWebRtcManager = sipLibrary.getEnhancedWebRtcManager()
-        
         setupAudioInterceptor()
     }
     
     private fun setupAudioInterceptor() {
         // Configurar listener para eventos de audio
-        enhancedWebRtcManager.setAudioInterceptorListener(object : AudioInterceptor.AudioInterceptorListener {
+        sipLibrary.setAudioInterceptorListener(object : AudioInterceptor.AudioInterceptorListener {
             override fun onIncomingAudioReceived(audioData: ByteArray, timestamp: Long) {
                 // Audio recibido interceptado
                 Log.d("AudioInterceptor", "Received ${audioData.size} bytes of incoming audio")
@@ -154,10 +149,10 @@ class CallActivity : ComponentActivity() {
         })
         
         // Habilitar interceptación
-        enhancedWebRtcManager.enableAudioInterception(true)
+        sipLibrary.enableAudioInterception(true)
         
         // Habilitar grabación
-        enhancedWebRtcManager.setAudioRecordingEnabled(true)
+        sipLibrary.setAudioRecordingEnabled(true)
     }
 }
 ```
@@ -170,14 +165,14 @@ class AudioInjectionExample {
     fun injectAudioFromFile() {
         // Cargar audio desde archivo
         val audioFile = File(context.filesDir, "mi_audio.wav")
-        val audioData = enhancedWebRtcManager.loadAudioFromFile(audioFile)
+        val audioData = sipLibrary.loadAudioFromFile(audioFile)
         
         if (audioData != null) {
             // Habilitar audio personalizado para envío
-            enhancedWebRtcManager.setCustomOutgoingAudioEnabled(true)
+            sipLibrary.setCustomOutgoingAudioEnabled(true)
             
             // Inyectar audio (esto reemplazará el micrófono)
-            enhancedWebRtcManager.injectOutgoingAudio(audioData)
+            sipLibrary.injectOutgoingAudio(audioData)
             
             Log.d("AudioInjection", "Audio injected: ${audioData.size} bytes")
         }
@@ -192,10 +187,10 @@ class AudioInjectionExample {
         val audioData = generateSineWave(sampleRate, duration, frequency)
         
         // Habilitar audio personalizado para reproducción
-        enhancedWebRtcManager.setCustomIncomingAudioEnabled(true)
+        sipLibrary.setCustomIncomingAudioEnabled(true)
         
         // Inyectar audio (esto reemplazará el audio recibido)
-        enhancedWebRtcManager.injectIncomingAudio(audioData)
+        sipLibrary.injectIncomingAudio(audioData)
     }
     
     private fun generateSineWave(sampleRate: Int, duration: Double, frequency: Double): ByteArray {
@@ -219,7 +214,8 @@ class AudioInjectionExample {
 
 ```kotlin
 class AudioConversionExample {
-    private val audioFileManager = AudioFileManager(context)
+    private val sipLibrary = EddysSipLibrary.getInstance()
+    private val audioFileManager = sipLibrary.getAudioFileManager()
     
     suspend fun convertWavToCompatibleFormat() {
         val wavFile = File(context.filesDir, "input.wav")
@@ -255,7 +251,7 @@ class AudioConversionExample {
             is ConversionResult.Success -> {
                 // El archivo PCMA está listo para usar con WebRTC
                 val pcmaData = result.outputFile.readBytes()
-                enhancedWebRtcManager.injectOutgoingAudio(pcmaData)
+                sipLibrary.injectOutgoingAudio(pcmaData)
             }
             is ConversionResult.Error -> {
                 Log.e("Conversion", "PCMA conversion failed: ${result.message}")
@@ -266,7 +262,7 @@ class AudioConversionExample {
     private fun useConvertedAudio(audioFile: File) {
         // Cargar y usar el audio convertido
         val audioData = audioFile.readBytes()
-        enhancedWebRtcManager.injectOutgoingAudio(audioData)
+        sipLibrary.injectOutgoingAudio(audioData)
     }
 }
 ```
@@ -283,7 +279,7 @@ class RealTimeAudioProcessor : AudioInterceptor.AudioInterceptorListener {
         val processedAudio = applyAudioFilters(audioData)
         
         // Reinyectar el audio procesado
-        enhancedWebRtcManager.injectIncomingAudio(processedAudio)
+        sipLibrary.injectIncomingAudio(processedAudio)
     }
     
     override fun onOutgoingAudioCaptured(audioData: ByteArray, timestamp: Long) {
@@ -291,7 +287,7 @@ class RealTimeAudioProcessor : AudioInterceptor.AudioInterceptorListener {
         val processedAudio = applyAudioEffects(audioData)
         
         // Reinyectar el audio procesado
-        enhancedWebRtcManager.injectOutgoingAudio(processedAudio)
+        sipLibrary.injectOutgoingAudio(processedAudio)
     }
     
     private fun applyAudioFilters(audioData: ByteArray): ByteArray {
@@ -337,7 +333,8 @@ class RealTimeAudioProcessor : AudioInterceptor.AudioInterceptorListener {
 
 ```kotlin
 class AdvancedAudioFileManager {
-    private val audioFileManager = AudioFileManager(context)
+    private val sipLibrary = EddysSipLibrary.getInstance()
+    private val audioFileManager = sipLibrary.getAudioFileManager()
     
     fun setupAutomaticCleanup() {
         // Limpiar archivos más antiguos de 3 días
@@ -397,65 +394,55 @@ class AdvancedAudioFileManager {
 }
 ```
 
-### 3. Integración con la Librería Principal
-
-Para integrar completamente el interceptor con tu librería existente, necesitarás modificar algunos archivos:
-
-#### Modificar `WebRtcManagerFactory.kt`:
+### 3. Uso Directo con la API Pública
 
 ```kotlin
-object WebRtcManagerFactory {
-    fun createWebRtcManager(application: Application): WebRtcManager {
-        return EnhancedWebRtcManager(application) // Usar la versión mejorada
-    }
-}
-```
-
-#### Agregar método en `EddysSipLibrary.kt`:
-
-```kotlin
-class EddysSipLibrary private constructor() {
-    // ... código existente ...
+class SimpleAudioInterceptionExample {
+    private val sipLibrary = EddysSipLibrary.getInstance()
     
-    /**
-     * Obtiene el WebRTC Manager mejorado con capacidades de interceptación
-     */
-    fun getEnhancedWebRtcManager(): EnhancedWebRtcManager {
-        checkInitialized()
-        return sipCoreManager?.webRtcManager as? EnhancedWebRtcManager 
-            ?: throw SipLibraryException("Enhanced WebRTC Manager not available")
-    }
-    
-    /**
-     * Habilita la interceptación de audio
-     */
-    fun enableAudioInterception(enabled: Boolean) {
-        checkInitialized()
-        getEnhancedWebRtcManager().enableAudioInterception(enabled)
+    fun setupBasicInterception() {
+        // Habilitar interceptación
+        sipLibrary.enableAudioInterception(true)
+        
+        // Habilitar grabación
+        sipLibrary.setAudioRecordingEnabled(true)
+        
+        // Configurar listener
+        sipLibrary.setAudioInterceptorListener(object : AudioInterceptor.AudioInterceptorListener {
+            override fun onIncomingAudioReceived(audioData: ByteArray, timestamp: Long) {
+                // Procesar audio entrante
+                Log.d("Audio", "Incoming: ${audioData.size} bytes")
+            }
+            
+            override fun onOutgoingAudioCaptured(audioData: ByteArray, timestamp: Long) {
+                // Procesar audio saliente
+                Log.d("Audio", "Outgoing: ${audioData.size} bytes")
+            }
+        })
     }
     
-    /**
-     * Inyecta audio personalizado para envío
-     */
-    fun injectOutgoingAudio(audioData: ByteArray) {
-        checkInitialized()
-        getEnhancedWebRtcManager().injectOutgoingAudio(audioData)
+    fun injectCustomAudio() {
+        // Cargar archivo de audio
+        val audioFile = File(context.filesDir, "custom_audio.wav")
+        val audioData = sipLibrary.loadAudioFromFile(audioFile)
+        
+        if (audioData != null) {
+            // Habilitar audio personalizado
+            sipLibrary.setCustomOutgoingAudioEnabled(true)
+            
+            // Inyectar audio
+            sipLibrary.injectOutgoingAudio(audioData)
+        }
     }
     
-    /**
-     * Inyecta audio personalizado para reproducción
-     */
-    fun injectIncomingAudio(audioData: ByteArray) {
-        checkInitialized()
-        getEnhancedWebRtcManager().injectIncomingAudio(audioData)
-    }
-    
-    /**
-     * Obtiene el gestor de archivos de audio
-     */
-    fun getAudioFileManager(): AudioFileManager {
-        checkInitialized()
-        return AudioFileManager(sipCoreManager?.application ?: throw SipLibraryException("Application context not available"))
+    fun checkInterceptionStatus() {
+        val isActive = sipLibrary.isAudioInterceptionActive()
+        val queueSizes = sipLibrary.getAudioQueueSizes()
+        val diagnostics = sipLibrary.getAudioInterceptorDiagnostics()
+        
+        Log.d("Status", "Interception active: $isActive")
+        Log.d("Status", "Queue sizes: $queueSizes")
+        Log.d("Status", "Diagnostics:\n$diagnostics")
     }
 }
 ```
@@ -587,11 +574,11 @@ class AutoResponseBot : AudioInterceptor.AudioInterceptorListener {
     private fun playRandomResponse() {
         val responseFile = responses.random()
         val audioFile = File(context.assets, responseFile)
-        val audioData = enhancedWebRtcManager.loadAudioFromFile(audioFile)
+        val audioData = sipLibrary.loadAudioFromFile(audioFile)
         
         audioData?.let {
-            enhancedWebRtcManager.setCustomOutgoingAudioEnabled(true)
-            enhancedWebRtcManager.injectOutgoingAudio(it)
+            sipLibrary.setCustomOutgoingAudioEnabled(true)
+            sipLibrary.injectOutgoingAudio(it)
         }
     }
 }
@@ -601,11 +588,13 @@ class AutoResponseBot : AudioInterceptor.AudioInterceptorListener {
 
 ```kotlin
 class AdvancedCallRecorder {
+    private val sipLibrary = EddysSipLibrary.getInstance()
+    private val audioFileManager = sipLibrary.getAudioFileManager()
     private var isRecording = false
     private val recordingFiles = mutableListOf<File>()
     
     fun startRecording() {
-        enhancedWebRtcManager.setAudioInterceptorListener(object : AudioInterceptor.AudioInterceptorListener {
+        sipLibrary.setAudioInterceptorListener(object : AudioInterceptor.AudioInterceptorListener {
             override fun onRecordingStarted(incomingFile: File?, outgoingFile: File?) {
                 isRecording = true
                 incomingFile?.let { recordingFiles.add(it) }
@@ -632,8 +621,8 @@ class AdvancedCallRecorder {
         })
         
         // Habilitar grabación
-        enhancedWebRtcManager.setAudioRecordingEnabled(true)
-        enhancedWebRtcManager.enableAudioInterception(true)
+        sipLibrary.setAudioRecordingEnabled(true)
+        sipLibrary.enableAudioInterception(true)
     }
     
     private fun processRecordings() {

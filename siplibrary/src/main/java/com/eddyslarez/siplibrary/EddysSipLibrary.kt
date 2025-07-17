@@ -1056,6 +1056,222 @@ class EddysSipLibrary private constructor() {
         }
     }
 
+    // === MÉTODOS DE INTERCEPTACIÓN DE AUDIO ===
+
+    /**
+     * Habilita o deshabilita la interceptación de audio
+     */
+    fun enableAudioInterception(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.enableAudioInterception(enabled)
+        log.d(tag = TAG) { "Audio interception enabled: $enabled" }
+    }
+
+    /**
+     * Inyecta audio personalizado para envío (reemplaza micrófono)
+     */
+    fun injectOutgoingAudio(audioData: ByteArray) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.injectOutgoingAudio(audioData)
+        log.d(tag = TAG) { "Outgoing audio injected: ${audioData.size} bytes" }
+    }
+
+    /**
+     * Inyecta audio personalizado para reproducción (reemplaza audio recibido)
+     */
+    fun injectIncomingAudio(audioData: ByteArray) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.injectIncomingAudio(audioData)
+        log.d(tag = TAG) { "Incoming audio injected: ${audioData.size} bytes" }
+    }
+
+    /**
+     * Habilita/deshabilita el uso de audio personalizado para envío
+     */
+    fun setCustomOutgoingAudioEnabled(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setCustomOutgoingAudioEnabled(enabled)
+        log.d(tag = TAG) { "Custom outgoing audio enabled: $enabled" }
+    }
+
+    /**
+     * Habilita/deshabilita el uso de audio personalizado para reproducción
+     */
+    fun setCustomIncomingAudioEnabled(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setCustomIncomingAudioEnabled(enabled)
+        log.d(tag = TAG) { "Custom incoming audio enabled: $enabled" }
+    }
+
+    /**
+     * Carga audio desde archivo para inyección
+     */
+    fun loadAudioFromFile(file: java.io.File): ByteArray? {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        return androidWebRtcManager.loadAudioFromFile(file)
+    }
+
+    /**
+     * Convierte archivo de audio a formato compatible
+     */
+    fun convertAudioFile(
+        inputFile: java.io.File,
+        outputFile: java.io.File,
+        inputFormat: AudioFileFormat
+    ): Boolean {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        return androidWebRtcManager.convertAudioFile(inputFile, outputFile, inputFormat)
+    }
+
+    /**
+     * Obtiene los archivos de grabación actuales
+     */
+    fun getRecordingFiles(): Pair<java.io.File?, java.io.File?> {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        return androidWebRtcManager.getRecordingFiles()
+    }
+
+    /**
+     * Configura el listener para eventos de interceptación de audio
+     */
+    fun setAudioInterceptorListener(listener: AudioInterceptor.AudioInterceptorListener?) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setAudioInterceptorListener(listener)
+        log.d(tag = TAG) { "Audio interceptor listener configured" }
+    }
+
+    /**
+     * Habilita/deshabilita la grabación de audio
+     */
+    fun setAudioRecordingEnabled(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setAudioRecordingEnabled(enabled)
+        log.d(tag = TAG) { "Audio recording enabled: $enabled" }
+    }
+
+    /**
+     * Habilita/deshabilita interceptación de audio entrante
+     */
+    fun setIncomingInterceptionEnabled(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setIncomingInterceptionEnabled(enabled)
+        log.d(tag = TAG) { "Incoming audio interception enabled: $enabled" }
+    }
+
+    /**
+     * Habilita/deshabilita interceptación de audio saliente
+     */
+    fun setOutgoingInterceptionEnabled(enabled: Boolean) {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: throw SipLibraryException("AndroidWebRtcManager not available")
+        
+        androidWebRtcManager.setOutgoingInterceptionEnabled(enabled)
+        log.d(tag = TAG) { "Outgoing audio interception enabled: $enabled" }
+    }
+
+    /**
+     * Verifica si la interceptación de audio está activa
+     */
+    fun isAudioInterceptionActive(): Boolean {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: return false
+        
+        return androidWebRtcManager.isAudioInterceptionActive()
+    }
+
+    /**
+     * Obtiene el tamaño de las colas de audio
+     */
+    fun getAudioQueueSizes(): Map<String, Int> {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: return emptyMap()
+        
+        return androidWebRtcManager.getAudioQueueSizes()
+    }
+
+    /**
+     * Obtiene el gestor de archivos de audio
+     */
+    fun getAudioFileManager(): AudioFileManager {
+        checkInitialized()
+        return AudioFileManager(sipCoreManager?.let { 
+            // Obtener el contexto de la aplicación desde el SipCoreManager
+            when (val webRtcManager = it.webRtcManager) {
+                is AndroidWebRtcManager -> {
+                    // Usar reflection para obtener el application context
+                    val field = AndroidWebRtcManager::class.java.getDeclaredField("application")
+                    field.isAccessible = true
+                    field.get(webRtcManager) as android.app.Application
+                }
+                else -> throw SipLibraryException("Cannot get application context")
+            }
+        } ?: throw SipLibraryException("SipCoreManager not available"))
+    }
+
+    /**
+     * Obtiene información de diagnóstico del interceptor de audio
+     */
+    fun getAudioInterceptorDiagnostics(): String {
+        checkInitialized()
+        val androidWebRtcManager = sipCoreManager?.webRtcManager as? AndroidWebRtcManager
+            ?: return "AndroidWebRtcManager not available"
+        
+        return buildString {
+            appendLine("=== AUDIO INTERCEPTOR DIAGNOSTICS ===")
+            appendLine("Interception Active: ${androidWebRtcManager.isAudioInterceptionActive()}")
+            
+            val queueSizes = androidWebRtcManager.getAudioQueueSizes()
+            appendLine("Queue sizes:")
+            queueSizes.forEach { (name, size) ->
+                appendLine("  $name: $size")
+            }
+            
+            val (incomingFile, outgoingFile) = androidWebRtcManager.getRecordingFiles()
+            appendLine("Recording files:")
+            appendLine("  Incoming: ${incomingFile?.name ?: "None"}")
+            appendLine("  Outgoing: ${outgoingFile?.name ?: "None"}")
+            
+            appendLine("\n--- WebRTC Audio Diagnostics ---")
+            appendLine(androidWebRtcManager.diagnoseAudioIssues())
+        }
+    }
+
     // === INTERFAZ INTERNA DE CALLBACKS ===
 
     internal interface SipCallbacks {

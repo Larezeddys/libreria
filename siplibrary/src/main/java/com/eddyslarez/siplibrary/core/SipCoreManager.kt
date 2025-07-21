@@ -335,25 +335,24 @@ class SipCoreManager private constructor(
             CallStateManager.streamsRunning(callData.callId)
         }
 
-        // NUEVO: Configurar audio para evitar bucle de traducción
-        setupAudioForTranslation()
+        // CRÍTICO: Configurar audio específicamente para traducción sin bucle
+        setupOptimizedAudioForTranslation()
 
         notifyCallStateChanged(CallState.STREAMS_RUNNING)
     }
 
     /**
-     * NUEVO: Configurar audio específicamente para traducción
+     * NUEVO: Configurar audio optimizado para traducción sin bucle
      */
-    private fun setupAudioForTranslation() {
+    private fun setupOptimizedAudioForTranslation() {
         try {
-            // CRÍTICO: Asegurar que el micrófono local NO interfiera con la traducción
             if (webRtcManager.isAudioTranslationEnabled()) {
-                log.d(tag = TAG) { "Configuring audio for translation mode" }
+                log.d(tag = TAG) { "Configuring optimized audio for translation mode" }
 
-                // Configurar audio para capturar solo remoto
+                // CRÍTICO: Configurar para capturar solo audio remoto, no local
                 webRtcManager.setListener(object : WebRtcEventListener {
                     override fun onIceCandidate(candidate: String, sdpMid: String, sdpMLineIndex: Int) {
-                        // Implementar envío de ICE candidate
+                        // ICE candidate handling
                     }
 
                     override fun onConnectionStateChange(state: WebRtcConnectionState) {
@@ -365,29 +364,39 @@ class SipCoreManager private constructor(
                     }
 
                     override fun onRemoteAudioTrack() {
-                        log.d(tag = TAG) { "Remote audio track received - ready for translation" }
+                        log.d(tag = TAG) { "Remote audio track received - optimized for translation" }
                     }
 
                     override fun onAudioDeviceChanged(device: AudioDevice?) {
                         log.d(tag = TAG) { "Audio device changed: ${device?.name}" }
                     }
 
-                    // NUEVO: Callbacks específicos de traducción
+                    // OPTIMIZADO: Callbacks específicos de traducción
                     override fun onTranslationStateChanged(isEnabled: Boolean, targetLanguage: String?) {
-                        log.d(tag = TAG) { "Translation state changed: $isEnabled to $targetLanguage" }
+                        log.d(tag = TAG) { "Translation optimized: $isEnabled to $targetLanguage" }
                     }
 
                     override fun onTranslationCompleted(success: Boolean, latency: Long, originalLanguage: String?, error: String?) {
                         if (success) {
-                            log.d(tag = TAG) { "Translation completed in ${latency}ms" }
+                            log.d(tag = TAG) { "Translation completed successfully in ${latency}ms" }
                         } else {
-                            log.e(tag = TAG) { "Translation failed: $error" }
+                            log.e(tag = TAG) { "Translation failed with optimized settings: $error" }
                         }
                     }
+
+                    override fun onTranslationProcessingChanged(isProcessing: Boolean, audioLength: Long) {
+                        log.d(tag = TAG) { "Translation processing: $isProcessing (${audioLength}ms audio)" }
+                    }
+
+                    override fun onTranslationQualityChanged(quality: WebRtcManager.TranslationQuality) {
+                        log.d(tag = TAG) { "Translation quality optimized: $quality" }
+                    }
                 })
+                
+                log.d(tag = TAG) { "Audio optimized for translation - anti-loop protection active" }
             }
         } catch (e: Exception) {
-            log.e(tag = TAG) { "Error setting up audio for translation: ${e.message}" }
+            log.e(tag = TAG) { "Error setting up optimized audio for translation: ${e.message}" }
         }
     }
     private fun handleWebRtcClosed() {

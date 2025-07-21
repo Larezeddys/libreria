@@ -146,7 +146,7 @@ class EddysSipLibrary private constructor() {
     fun enableAudioTranslation(
         apiKey: String? = null,
         targetLanguage: String? = null,
-        model: String = "gpt-4o-realtime-preview-2025-06-03"
+        model: String = "gpt-4o-realtime-preview-2024-12-17"
     ): Boolean {
         checkInitialized()
 
@@ -158,7 +158,7 @@ class EddysSipLibrary private constructor() {
             return false
         }
 
-        log.d(tag = TAG) { "Enabling AI audio translation to $finalTargetLanguage (anti-loop mode)" }
+        log.d(tag = TAG) { "Enabling optimized AI audio translation to $finalTargetLanguage" }
 
         return try {
             val result = sipCoreManager?.webRtcManager?.enableAudioTranslation(
@@ -168,7 +168,7 @@ class EddysSipLibrary private constructor() {
             ) ?: false
 
             if (result) {
-                // NUEVO: Configurar listener específico para traducción
+                // OPTIMIZADO: Configurar listener específico para traducción sin bucle
                 sipCoreManager?.webRtcManager?.setListener(object : WebRtcEventListener {
                     override fun onIceCandidate(candidate: String, sdpMid: String, sdpMLineIndex: Int) {}
                     override fun onConnectionStateChange(state: WebRtcConnectionState) {}
@@ -213,7 +213,7 @@ class EddysSipLibrary private constructor() {
                     }
                 })
 
-                log.d(tag = TAG) { "AI translation enabled successfully with anti-loop configuration" }
+                log.d(tag = TAG) { "AI translation enabled successfully with optimized anti-loop configuration" }
             }
 
             result

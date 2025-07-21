@@ -179,36 +179,37 @@ class OpenAIRealtimeManager(
             put("type", "session.update")
             put("session", JSONObject().apply {
                 put("modalities", org.json.JSONArray().apply {
-                    put("text")
                     put("audio")
                 })
                 put("instructions", """
-                    You are a real-time audio translator. When you receive audio input, translate it to $targetLanguage and respond ONLY with the translation in audio format.
+                    You are a professional real-time audio translator. Your ONLY job is to translate spoken words to $targetLanguage.
                     
-                    CRITICAL RULES:
-                    - ONLY translate what you hear
-                    - Do NOT add explanations or comments
-                    - Do NOT say "I will translate" or similar
-                    - Respond immediately with just the translation
-                    - If you hear nothing meaningful, stay silent
-                    - Keep the same tone and emotion
+                    STRICT RULES:
+                    1. ONLY translate the spoken words you hear
+                    2. NEVER add greetings, explanations, or comments
+                    3. NEVER say "I will translate", "The translation is", or similar phrases
+                    4. Respond IMMEDIATELY with ONLY the translated speech
+                    5. If you hear silence or unclear audio, respond with silence
+                    6. Maintain the original tone and emotion
+                    7. Use natural, fluent speech in $targetLanguage
+                    8. NEVER break character as a translator
                     
-                    Target language: $targetLanguage
+                    Simply translate directly: [Original speech] → [Translated speech in $targetLanguage]
                 """.trimIndent())
-                put("voice", "alloy")
+                put("voice", "nova") // Cambiado a nova para mejor calidad de voz
                 put("input_audio_format", "pcm16")
                 put("output_audio_format", "pcm16")
 
                 // CORREGIDO: Configuración más estricta para evitar false positives
                 put("turn_detection", JSONObject().apply {
                     put("type", "server_vad")
-                    put("threshold", 0.7f) // Más estricto
-                    put("prefix_padding_ms", 300)
-                    put("silence_duration_ms", 1000) // Más tiempo para asegurar fin del habla
+                    put("threshold", 0.8f) // Aún más estricto para evitar ruido
+                    put("prefix_padding_ms", 200) // Reducido para menor latencia
+                    put("silence_duration_ms", 800) // Optimizado para respuesta rápida
                 })
                 put("tool_choice", "none")
-                put("temperature", 0.6)
-                put("max_response_output_tokens", 1000)
+                put("temperature", 0.3) // Más determinístico para traducciones consistentes
+                put("max_response_output_tokens", 150) // Limitado para respuestas concisas
             })
         }
 
@@ -521,23 +522,22 @@ class OpenAIRealtimeManager(
             put("type", "session.update")
             put("session", JSONObject().apply {
                 put("instructions", """
-                    You are a professional real-time audio translator. 
-                    Your ONLY job is to translate spoken audio to $targetLanguage.
+                    You are a professional real-time audio translator. Your ONLY job is to translate spoken words to $language.
                     
-                    Rules:
-                    1. Translate EXACTLY what is said, nothing more, nothing less
-                    2. Do NOT add greetings, comments, or explanations
-                    3. Do NOT say "I will translate" or similar phrases
-                    4. Do NOT add context or interpretations
-                    5. Maintain the original tone and emotion
-                    6. Translate in real-time as fast as possible
-                    7. Use natural, fluent speech in the target language
-                    8. If you hear silence, respond with silence
-                    9. If unclear, translate your best approximation
-                    10. NEVER break character as a translator
+                    STRICT RULES:
+                    1. ONLY translate the spoken words you hear
+                    2. NEVER add greetings, explanations, or comments
+                    3. NEVER say "I will translate", "The translation is", or similar phrases
+                    4. Respond IMMEDIATELY with ONLY the translated speech
+                    5. If you hear silence or unclear audio, respond with silence
+                    6. Maintain the original tone and emotion
+                    7. Use natural, fluent speech in $language
+                    8. NEVER break character as a translator
                     
-                    Simply translate the audio content directly to $targetLanguage.
+                    Simply translate directly: [Original speech] → [Translated speech in $language]
                 """.trimIndent())
+                put("voice", "nova") // Mejor calidad de voz
+                put("temperature", 0.3) // Más determinístico
             })
         }
 
@@ -594,15 +594,16 @@ class OpenAIRealtimeManager(
         this.translationQuality = quality
 
         val temperature = when (quality) {
-            WebRtcManager.TranslationQuality.LOW -> 0.6
-            WebRtcManager.TranslationQuality.MEDIUM -> 0.8
-            WebRtcManager.TranslationQuality.HIGH -> 1.0
+            WebRtcManager.TranslationQuality.LOW -> 0.2
+            WebRtcManager.TranslationQuality.MEDIUM -> 0.3
+            WebRtcManager.TranslationQuality.HIGH -> 0.4
         }
 
         val sessionUpdate = JSONObject().apply {
             put("type", "session.update")
             put("session", JSONObject().apply {
                 put("temperature", temperature)
+                put("voice", "nova") // Asegurar voz de alta calidad
             })
         }
 
